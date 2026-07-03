@@ -1,0 +1,11 @@
+# Local data file — should never be committed. On the host, this lives on
+# a persistent volume instead (see README).
+tracker_data.json
+
+# Environment files if you ever add one locally
+.env
+
+# OS/editor junk
+.DS_Store
+__pycache__/
+*.pyc
