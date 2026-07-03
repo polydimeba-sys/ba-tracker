@@ -1,0 +1,49 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────
+// Polydime BA Tracker — Firestore Security Rules
+//
+// How to apply:
+//   Firebase Console → your project → Firestore Database → Rules tab
+//   → replace everything with this file's contents → Publish
+//
+// What this does:
+//   - Anyone can READ members/entries (needed for the login dropdown
+//     and dashboards to work without a real auth system).
+//   - WRITES require the request to "prove" it knows a valid shape of
+//     data — this is NOT the same as real authentication, but it
+//     blocks casual drive-by writes from bots scanning for open
+//     Firestore projects, which is the main real-world risk here.
+//
+// Limitation: because this app doesn't use Firebase Authentication
+// (it uses a simple shared password checked in JavaScript), these
+// rules can't verify *who* is writing — only that the data being
+// written looks like a legitimate member/entry. A technically
+// determined person with your Firebase config could still write
+// junk data. For a small internal team tool this is an accepted
+// tradeoff; if you need stronger guarantees later, migrate to
+// Firebase Authentication (e.g. email/password per team member).
+// ─────────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /members/{memberId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['name','role','color','bg','createdAt'])
+                    && request.resource.data.name is string
+                    && request.resource.data.name.size() > 0
+                    && request.resource.data.name.size() < 100;
+      allow update, delete: if false; // not used by the app today
+    }
+
+    match /entries/{entryId} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['memberId','date','tasks','submittedAt'])
+                    && request.resource.data.memberId is string
+                    && request.resource.data.memberId.size() > 0;
+      allow update: if false; // entries aren't edited after submission
+      allow delete: if true;  // admin dashboard deletes entries client-side
+    }
+  }
+}

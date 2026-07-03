@@ -7,6 +7,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 <!-- SheetJS for real .xlsx export -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- Firebase (compat build — works with plain <script> tags, no build step) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
 :root {
   --bg:#080C14; --bg2:#0D1220;
@@ -457,44 +460,85 @@ td .meta{font-size:11px;color:var(--text3);margin-top:3px;}
 
 <script>
 // ══════════════════════════════════════════════════════
-//  API LAYER  — talks to server.py backend
+//  API LAYER  — talks to Firebase Firestore directly
+//  (Static hosting on GitHub Pages — no backend server)
 // ══════════════════════════════════════════════════════
-const API = window.location.origin;   // same host:port as the page
+const firebaseConfig = {
+  apiKey: "AIzaSyC6zKWm6rnsU5P-bdHl0Mte2NQGODi8rHQ",
+  authDomain: "ba-tracker-a6932.firebaseapp.com",
+  projectId: "ba-tracker-a6932",
+  storageBucket: "ba-tracker-a6932.firebasestorage.app",
+  messagingSenderId: "603935497997",
+  appId: "1:603935497997:web:4381d52974e730800eda44"
+};
+firebase.initializeApp(firebaseConfig);
+const fsdb = firebase.firestore();
 
-async function apiFetch(method, path, body) {
-  const opts = { method, headers: { 'Content-Type': 'application/json' } };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch(API + path, opts);
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Server error');
-  return data;
-}
-
-// Compatibility wrappers so the rest of the code stays the same
-async function openDB() { /* no-op — server handles storage */ }
+// Compatibility wrappers so the rest of the app's code stays the same
+async function openDB() { /* no-op — Firestore handles storage */ }
 
 async function dbGetAll(store) {
-  return apiFetch('GET', '/api/' + store);
+  const snap = await fsdb.collection(store).get();
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
 async function dbPut(store, obj) {
-  if (store === 'members') return apiFetch('POST', '/api/members', obj);
-  if (store === 'entries') return apiFetch('POST', '/api/entries', obj);
+  if (store === 'members') return addMemberToDB(obj.name, obj.role);
+  if (store === 'entries') return addEntryToDB(obj);
 }
 
 async function dbDelete(store, key) {
-  return apiFetch('DELETE', '/api/' + store + '/' + key);
+  await fsdb.collection(store).doc(key).delete();
+  return { deleted: key };
 }
 
 async function dbGetByIndex(store, indexName, value) {
-  if (store === 'entries' && indexName === 'memberId')
-    return apiFetch('GET', '/api/entries?memberId=' + encodeURIComponent(value));
-  return apiFetch('GET', '/api/' + store);
+  if (store === 'entries' && indexName === 'memberId') {
+    const snap = await fsdb.collection('entries').where('memberId', '==', value).get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  }
+  return dbGetAll(store);
+}
+
+async function addMemberToDB(name, role) {
+  const existing = await dbGetAll('members');
+  const colorIdx = existing.length % COLORS.length;
+  const member = {
+    name,
+    role: role || 'Team Member',
+    color: COLORS[colorIdx].color,
+    bg: COLORS[colorIdx].bg,
+    createdAt: new Date().toISOString(),
+  };
+  const ref = await fsdb.collection('members').add(member);
+  return { id: ref.id, ...member };
+}
+
+async function addEntryToDB(data) {
+  const entry = {
+    memberId: data.memberId,
+    memberName: currentUser ? currentUser.name : (data.memberName || ''),
+    memberRole: currentUser ? currentUser.role : (data.memberRole || ''),
+    date: data.date || '',
+    project: data.project || '',
+    tasks: data.tasks || [],
+    hours: data.hours || '',
+    status: data.status || 'In Progress',
+    blockers: data.blockers || '',
+    tomorrow: data.tomorrow || '',
+    submittedAt: new Date().toISOString(),
+  };
+  const ref = await fsdb.collection('entries').add(entry);
+  return { id: ref.id, ...entry };
 }
 
 // ══════════════════════════════════════════════════════
 //  CONSTANTS & STATE
 // ══════════════════════════════════════════════════════
+// NOTE: since this is a static site, these passwords are visible to anyone
+// who views the page source. Real access control is enforced by the
+// Firestore Security Rules on Google's end, not by hiding these strings.
+// Change these before sharing the link with your team.
 const ADMIN_PASS = 'admin2024';
 const MEMBER_PASS = 'member123';
 const COLORS = [
@@ -596,13 +640,23 @@ async function init() {
   const badge = document.querySelector('.db-badge');
   try {
     allMembers = await dbGetAll('members');
+    if (allMembers.length === 0) {
+      // First run — seed the default team members into Firestore
+      for (const m of DEFAULT_MEMBERS) {
+        await fsdb.collection('members').doc(m.id).set({
+          name: m.name, role: m.role, color: m.color, bg: m.bg, createdAt: m.createdAt
+        });
+      }
+      allMembers = await dbGetAll('members');
+    }
     populateLoginSelect();
-    badge.innerHTML = '<div class="db-dot"></div><span>Server online</span>';
+    badge.innerHTML = '<div class="db-dot"></div><span>Firestore connected</span>';
     badge.style.color = 'var(--success)';
   } catch(e) {
-    sel.innerHTML = '<option value="">\u26a0 Server offline \u2014 run: python server.py</option>';
-    badge.innerHTML = '\u26a0 Server offline';
+    sel.innerHTML = '<option value="">\u26a0 Firestore connection failed</option>';
+    badge.innerHTML = '\u26a0 Connection error';
     badge.style.color = 'var(--danger)';
+    console.error(e);
   }
 }
 
@@ -631,8 +685,18 @@ async function doLogin() {
   btn.disabled=true; btn.textContent='Signing in…';
 
   try {
-    const res = await apiFetch('POST', '/api/login', { memberId, password });
-    currentUser = { ...res.user, isAdmin: res.isAdmin };
+    if (memberId === '__admin__') {
+      if (password !== ADMIN_PASS) throw new Error('Incorrect admin password.');
+      currentUser = {
+        id: '__admin__', name: 'Administrator', role: 'Admin',
+        color: '#4F8BFF', bg: 'rgba(79,139,255,0.2)', isAdmin: true,
+      };
+    } else {
+      if (password !== MEMBER_PASS) throw new Error('Incorrect password.');
+      const member = allMembers.find(m => m.id === memberId);
+      if (!member) throw new Error('Member not found.');
+      currentUser = { ...member, isAdmin: false };
+    }
 
     const av = document.getElementById('top-av');
     av.textContent = initials(currentUser.name);
@@ -892,13 +956,13 @@ async function submitEntry(){
   btn.disabled=true; btn.textContent='Saving…';
 
   try {
-    const entry = await apiFetch('POST', '/api/entries', {
+    const entry = await addEntryToDB({
       memberId:currentUser.id,
       date, project, tasks, hours, status, blockers, tomorrow,
     });
     allEntries.unshift(entry);
 
-    showToast('Saved to server successfully!');
+    showToast('Saved successfully!');
     document.getElementById('last-banner').style.display='block';
     document.getElementById('last-banner-text').textContent=`Submitted on ${formatDate(date)} \u2014 Just now`;
     document.getElementById('member-sub').textContent='Last update: '+formatDateTime(entry.submittedAt);
@@ -1088,14 +1152,14 @@ async function addMember(){
   const role=document.getElementById('new-role').value.trim();
   if(!name){showToast('Please enter a name.','error');return;}
   try {
-    const m = await apiFetch('POST', '/api/members', {name, role: role||'Team Member'});
+    const m = await addMemberToDB(name, role||'Team Member');
     allMembers.push(m);
     populateLoginSelect();
     populateFilterSelect();
     renderMemberGrid();
     renderOverview();
     closeModal('add-member');
-    showToast(`${name} added to server!`);
+    showToast(`${name} added!`);
     document.getElementById('new-name').value='';
     document.getElementById('new-role').value='';
   } catch(e) {
@@ -1107,8 +1171,8 @@ async function addMember(){
 //  EXCEL EXPORT  (.xlsx — opens in Microsoft Excel)
 // ══════════════════════════════════════════════════════
 async function exportExcel(){
-  const entries = await apiFetch('GET', '/api/entries');
-  const members = await apiFetch('GET', '/api/members');
+  const entries = await dbGetAll('entries');
+  const members = await dbGetAll('members');
 
   if(entries.length===0){showToast('No entries to export yet.','error');return;}
 

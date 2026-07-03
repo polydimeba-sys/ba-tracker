@@ -1,79 +1,86 @@
-# Polydime BA Team Tracker
+# Polydime BA Team Tracker (Firebase edition)
 
-A tiny self-contained team tracker: a Python standard-library HTTP server
-(`server.py`) serving a single-page app (`polydime-ba-tracker.html`), with
-data stored in a JSON file. No external Python packages required.
+A team tracker with **no backend server** — the page talks directly to
+Google Firestore (a free-tier cloud database), so it can be hosted as a
+plain static site on GitHub Pages.
 
-GitHub itself can only host **static** files, so it can't run `server.py`
-directly. The way to "host it through GitHub" is:
+## What changed from the Python version
 
-1. Push this folder to a GitHub repo.
-2. Connect that repo to a free host that runs Python and auto-deploys on
-   every push (Railway is recommended below; Render works too).
+- `server.py` is gone. Data lives in Firestore instead of a local
+  `tracker_data.json` file.
+- Login still uses simple shared passwords (`ADMIN_PASS` / `MEMBER_PASS`,
+  near the top of the `<script>` block in the HTML file) — same as
+  before, just checked in the browser instead of on a server.
+- **Important tradeoff**: since there's no server to hide anything, your
+  Firebase config and these passwords are visible to anyone who views
+  the page source. That's normal/expected for Firebase web apps — real
+  protection comes from Firestore Security Rules (see below), not from
+  hiding the config.
 
-## 1. Push to GitHub
+## One-time setup (you've already done most of this)
+
+1. ✅ Firebase project created, Firestore database created (test mode)
+2. ✅ Web app registered, config pasted into `polydime-ba-tracker.html`
+
+### Apply the real security rules (do this before sharing the link)
+
+Test mode leaves Firestore wide open and auto-locks after 30 days. Replace
+it with the rules in `firestore.rules` now, rather than waiting:
+
+1. Firebase Console → your project → **Firestore Database → Rules** tab
+2. Delete everything in the editor, paste in the contents of
+   `firestore.rules` from this folder
+3. Click **Publish**
+
+This allows anyone to *read* the team's data (needed for the login
+dropdown and dashboards) but restricts *writes* to data that looks like
+a legitimate member/entry — enough to block bots that scan for open
+Firestore projects. It is **not** the same as real per-user
+authentication; see the comments in `firestore.rules` for the details
+and tradeoffs.
+
+### Change the default passwords
+
+Open `polydime-ba-tracker.html`, find these two lines near the top of
+the `<script>` block, and set your own values:
+
+```js
+const ADMIN_PASS = 'admin2024';
+const MEMBER_PASS = 'member123';
+```
+
+## Deploy to GitHub Pages
 
 ```bash
-cd ba-tracker
-git init
 git add .
-git commit -m "Initial commit"
-git branch -M main
-git remote add origin https://github.com/<your-username>/<your-repo>.git
-git push -u origin main
+git commit -m "Switch to Firebase, remove Python backend"
+git push
 ```
 
-`tracker_data.json` is intentionally excluded via `.gitignore` — your real
-data should live on the host's persistent volume, not in the repo.
+Then on GitHub:
+1. Go to your repo → **Settings → Pages**
+2. Under **Source**, choose **Deploy from a branch**
+3. Branch: `main`, folder: `/ (root)` → **Save**
+4. GitHub gives you a URL like `https://polydimeba-sys.github.io/ba-tracker/`
+   — that's your live site (can take a minute or two to activate the first time)
 
-## 2. Deploy on Railway (recommended)
+Every future `git push` updates the live site automatically.
 
-1. Go to [railway.app](https://railway.app) and sign in with GitHub.
-2. **New Project → Deploy from GitHub repo** → select this repo.
-3. Railway auto-detects Python and uses the `Procfile` to start it.
-4. **Add a Volume** (Project → your service → Volumes tab):
-   - Mount path: `/data`
-5. **Set environment variables** (Service → Variables tab):
-   | Variable      | Value                          |
-   |---------------|--------------------------------|
-   | `DATA_DIR`    | `/data`                        |
-   | `ADMIN_PASS`  | *your own admin password*      |
-   | `MEMBER_PASS` | *your own team password*       |
+## Local testing
 
-   (`PORT` is set automatically by Railway — don't override it.)
-6. Deploy. Railway gives you a public URL like
-   `https://your-app.up.railway.app` — that's your live tracker.
-7. From now on, every `git push` to `main` auto-redeploys.
-
-## 2b. Deploy on Render (alternative)
-
-Same idea, different platform:
-
-1. [render.com](https://render.com) → **New → Web Service** → connect the
-   GitHub repo.
-2. Build command: *(leave blank)*. Start command: `python3 server.py`.
-3. Add a **Disk** (Render's persistent storage) mounted at `/data`
-   — note: persistent disks require a paid instance type on Render;
-   the free tier's filesystem resets on every deploy.
-4. Set the same environment variables as above (`DATA_DIR=/data`,
-   `ADMIN_PASS`, `MEMBER_PASS`).
-
-## Local development
-
-Unchanged from before — env vars are optional locally:
+No server needed anymore — just open `polydime-ba-tracker.html` directly
+in a browser, or serve it with any static file server:
 
 ```bash
-python3 server.py
-# open http://localhost:8080
+python3 -m http.server 8080
+# open http://localhost:8080/polydime-ba-tracker.html
 ```
 
-## Security notes before going live
+## Notes
 
-- Set real values for `ADMIN_PASS` and `MEMBER_PASS` as environment
-  variables on the host. Don't leave the defaults in place, and don't
-  commit real passwords into the repo.
-- The host's free HTTPS (Railway and Render both provide it automatically)
-  covers the "no HTTPS" gap from running this locally over plain HTTP.
-- Back up `tracker_data.json` periodically — ask your host how to download
-  files from its persistent volume/disk, or add a small script that copies
-  it somewhere safe on a schedule.
+- First time anyone loads the app, it seeds the four default team members
+  into Firestore automatically (Alice, Bob, Priya, David) — edit or add
+  real ones from the Admin dashboard afterward.
+- Excel export works exactly as before (client-side, via SheetJS).
+- Firestore's free tier (Spark plan) comfortably covers a small internal
+  team's daily usage.
