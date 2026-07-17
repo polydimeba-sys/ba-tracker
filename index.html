@@ -449,8 +449,8 @@ td .meta{font-size:11px;color:var(--text3);margin-top:3px;}
 <div id="modal-add-member" class="modal-bg">
   <div class="modal-card">
     <div class="modal-title">Add team member</div>
-    <div class="form-group"><label>Full name</label><input type="text" id="new-name" placeholder="e.g. Sarah Johnson"></div>
-    <div class="form-group"><label>Role / Department</label><input type="text" id="new-role" placeholder="e.g. Business Analyst"></div>
+    <div class="form-group"><label>Full name</label><input type="text" id="new-name" placeholder="e.g. Akalanka Mewan"></div>
+    <div class="form-group"><label>Role / Department</label><input type="text" id="new-role" placeholder="e.g. Financial Analyst"></div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:1rem;">
       <button class="btn" onclick="closeModal('add-member')">Cancel</button>
       <button class="btn btn-primary" onclick="addMember()">Add member →</button>
@@ -539,8 +539,8 @@ async function addEntryToDB(data) {
 // who views the page source. Real access control is enforced by the
 // Firestore Security Rules on Google's end, not by hiding these strings.
 // Change these before sharing the link with your team.
-const ADMIN_PASS = 'admin2024';
-const MEMBER_PASS = 'member123';
+const ADMIN_PASS = 'sanjuba';
+const MEMBER_PASS = 'ba123';
 const COLORS = [
   {color:'#4F8BFF',bg:'rgba(79,139,255,0.2)'},
   {color:'#00D4C8',bg:'rgba(0,212,200,0.2)'},
@@ -556,10 +556,11 @@ let allEntries = [];
 let taskRows = [];
 
 const DEFAULT_MEMBERS = [
-  {id:'m1',name:'Alice Chen',role:'Business Analyst',color:'#4F8BFF',bg:'rgba(79,139,255,0.2)',createdAt:new Date().toISOString()},
-  {id:'m2',name:'Bob Rahman',role:'Senior BA',color:'#00D4C8',bg:'rgba(0,212,200,0.2)',createdAt:new Date().toISOString()},
-  {id:'m3',name:'Priya Nair',role:'Product Manager',color:'#B47FFF',bg:'rgba(180,127,255,0.2)',createdAt:new Date().toISOString()},
-  {id:'m4',name:'David Perera',role:'Junior BA',color:'#FFB347',bg:'rgba(255,179,71,0.2)',createdAt:new Date().toISOString()},
+  {id:'m1',name:'Sanju Dulanjalee',role:'Head of Financial Analysis',color:'#4F8BFF',bg:'rgba(79,139,255,0.2)',createdAt:new Date().toISOString()},
+  {id:'m2',name:'Akalanka Mewan',role:'Junior Financial Analyst',color:'#00D4C8',bg:'rgba(0,212,200,0.2)',createdAt:new Date().toISOString()},
+  {id:'m3',name:'Lakmal',role:'Data Analyst',color:'#B47FFF',bg:'rgba(180,127,255,0.2)',createdAt:new Date().toISOString()},
+  {id:'m4',name:'Thinithi Dewhara',role:'Junior Financial Analyst',color:'#FFB347',bg:'rgba(255,179,71,0.2)',createdAt:new Date().toISOString()},
+  {id:'m4',name:'Kirthana Ramachandran',role:'Junior Financial Analyst',color:'#FFB347',bg:'rgba(255,179,71,0.2)',createdAt:new Date().toISOString()},
 ];
 
 // ══════════════════════════════════════════════════════
