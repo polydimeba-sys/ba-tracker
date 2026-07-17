@@ -195,6 +195,8 @@ td .meta{font-size:11px;color:var(--text3);margin-top:3px;}
 .member-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;}
 .member-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem;transition:all 0.25s;display:flex;align-items:center;gap:14px;backdrop-filter:blur(20px);}
 .member-card:hover{border-color:var(--accent);box-shadow:0 0 24px rgba(79,139,255,0.1);transform:translateY(-2px);}
+.member-actions{display:flex;gap:6px;margin-left:auto;flex-shrink:0;}
+.member-actions button{padding:6px 8px;border-radius:8px;}
 .member-info .mname{font-weight:700;font-size:14px;color:var(--text);font-family:'Syne',sans-serif;}
 .member-info .mrole{font-size:12px;color:var(--text3);margin-top:2px;}
 .member-info .mstats{font-size:11px;color:var(--text3);margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;}
@@ -458,6 +460,20 @@ td .meta{font-size:11px;color:var(--text3);margin-top:3px;}
   </div>
 </div>
 
+<!-- MODAL: Edit Member -->
+<div id="modal-edit-member" class="modal-bg">
+  <div class="modal-card">
+    <div class="modal-title">Edit team member</div>
+    <input type="hidden" id="edit-member-id">
+    <div class="form-group"><label>Full name</label><input type="text" id="edit-name" placeholder="e.g. Akalanka Mewan"></div>
+    <div class="form-group"><label>Role / Department</label><input type="text" id="edit-role" placeholder="e.g. Financial Analyst"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:1rem;">
+      <button class="btn" onclick="closeModal('edit-member')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEditMember()">Save changes →</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ══════════════════════════════════════════════════════
 //  API LAYER  — talks to Firebase Firestore directly
@@ -532,6 +548,21 @@ async function addEntryToDB(data) {
   return { id: ref.id, ...entry };
 }
 
+async function updateMemberInDB(id, name, role) {
+  await fsdb.collection('members').doc(id).update({ name, role });
+  return { id, name, role };
+}
+
+async function deleteMemberFromDB(id) {
+  // Cascade: remove the member's own log entries first, then the member
+  const entriesSnap = await fsdb.collection('entries').where('memberId', '==', id).get();
+  const batch = fsdb.batch();
+  entriesSnap.docs.forEach(d => batch.delete(d.ref));
+  batch.delete(fsdb.collection('members').doc(id));
+  await batch.commit();
+  return { deleted: id };
+}
+
 // ══════════════════════════════════════════════════════
 //  CONSTANTS & STATE
 // ══════════════════════════════════════════════════════
@@ -560,7 +591,7 @@ const DEFAULT_MEMBERS = [
   {id:'m2',name:'Akalanka Mewan',role:'Junior Financial Analyst',color:'#00D4C8',bg:'rgba(0,212,200,0.2)',createdAt:new Date().toISOString()},
   {id:'m3',name:'Lakmal',role:'Data Analyst',color:'#B47FFF',bg:'rgba(180,127,255,0.2)',createdAt:new Date().toISOString()},
   {id:'m4',name:'Thinithi Dewhara',role:'Junior Financial Analyst',color:'#FFB347',bg:'rgba(255,179,71,0.2)',createdAt:new Date().toISOString()},
-  {id:'m4',name:'Kirthana Ramachandran',role:'Junior Financial Analyst',color:'#FFB347',bg:'rgba(255,179,71,0.2)',createdAt:new Date().toISOString()},
+  {id:'m5',name:'Kirthana Ramachandran',role:'Junior Financial Analyst',color:'#FF4D6A',bg:'rgba(255,77,106,0.2)',createdAt:new Date().toISOString()},
 ];
 
 // ══════════════════════════════════════════════════════
@@ -1099,8 +1130,66 @@ function renderMemberGrid(){
           <span>Last: ${last?relativeTime(last.submittedAt):'Never'}</span>
         </div>
       </div>
+      <div class="member-actions">
+        <button class="btn btn-sm" onclick="openEditMember('${m.id}')" title="Edit member">✎</button>
+        <button class="btn btn-sm btn-danger" onclick="confirmDeleteMember('${m.id}')" title="Delete member">🗑</button>
+      </div>
     </div>`;
   }).join('');
+}
+
+function openEditMember(id){
+  const m = allMembers.find(x=>x.id===id);
+  if(!m) return;
+  document.getElementById('edit-member-id').value = m.id;
+  document.getElementById('edit-name').value = m.name;
+  document.getElementById('edit-role').value = m.role;
+  openModal('edit-member');
+}
+
+async function saveEditMember(){
+  const id = document.getElementById('edit-member-id').value;
+  const name = document.getElementById('edit-name').value.trim();
+  const role = document.getElementById('edit-role').value.trim();
+  if(!name){ showToast('Please enter a name.','error'); return; }
+  try {
+    await updateMemberInDB(id, name, role||'Team Member');
+    const m = allMembers.find(x=>x.id===id);
+    if(m){ m.name=name; m.role=role||'Team Member'; }
+    allEntries.forEach(e=>{ if(e.memberId===id){ e.memberName=name; e.memberRole=role||'Team Member'; } });
+    populateLoginSelect();
+    populateFilterSelect();
+    renderMemberGrid();
+    renderOverview();
+    renderTable();
+    closeModal('edit-member');
+    showToast(`${name} updated!`);
+  } catch(e) {
+    showToast('Failed to update: '+e.message,'error');
+  }
+}
+
+async function confirmDeleteMember(id){
+  const m = allMembers.find(x=>x.id===id);
+  if(!m) return;
+  const entryCount = allEntries.filter(e=>e.memberId===id).length;
+  const warning = entryCount > 0
+    ? `Delete ${m.name}? This will also permanently delete their ${entryCount} log ${entryCount===1?'entry':'entries'}. This cannot be undone.`
+    : `Delete ${m.name}? This cannot be undone.`;
+  if(!confirm(warning)) return;
+  try {
+    await deleteMemberFromDB(id);
+    allMembers = allMembers.filter(x=>x.id!==id);
+    allEntries = allEntries.filter(e=>e.memberId!==id);
+    populateLoginSelect();
+    populateFilterSelect();
+    renderMemberGrid();
+    renderOverview();
+    renderTable();
+    showToast(`${m.name} deleted.`);
+  } catch(e) {
+    showToast('Failed to delete: '+e.message,'error');
+  }
 }
 
 function renderOverview(){
